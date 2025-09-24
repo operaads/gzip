@@ -2,8 +2,8 @@ package gzip
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
+	"github.com/klauspost/compress/gzip"
 	"io"
 	"net/http"
 	"net/http/httptest"

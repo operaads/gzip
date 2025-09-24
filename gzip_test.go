@@ -3,9 +3,9 @@ package gzip
 import (
 	"bufio"
 	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
+	"github.com/klauspost/compress/gzip"
 	"io"
 	"net"
 	"net/http"

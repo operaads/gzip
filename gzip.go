@@ -2,8 +2,8 @@ package gzip
 
 import (
 	"bufio"
-	"compress/gzip"
 	"errors"
+	"github.com/klauspost/compress/gzip"
 	"net"
 	"net/http"
 

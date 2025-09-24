@@ -1,8 +1,8 @@
 package gzip
 
 import (
-	"compress/gzip"
 	"errors"
+	"github.com/klauspost/compress/gzip"
 	"io"
 	"net/http"
 	"regexp"
