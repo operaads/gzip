@@ -1,8 +1,8 @@
 package gzip
 
 import (
-	"compress/gzip"
 	"fmt"
+	"github.com/klauspost/compress/gzip"
 	"io/ioutil"
 	"net/http"
 	"path/filepath"

@@ -2,9 +2,9 @@ package gzip
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"fmt"
+	"github.com/klauspost/compress/gzip"
 	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
