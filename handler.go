@@ -2,14 +2,11 @@ package gzip
 
 import (
 	"fmt"
-	"github.com/klauspost/compress/gzip"
-	"io/ioutil"
-	"net/http"
-	"path/filepath"
-	"strings"
+	"io"
 	"sync"
 
 	"github.com/gin-gonic/gin"
+	"github.com/klauspost/compress/gzip"
 )
 
 type gzipHandler struct {
@@ -18,11 +15,18 @@ type gzipHandler struct {
 }
 
 func newGzipHandler(level int, options ...Option) *gzipHandler {
+	// Create a copy of DefaultOptions to avoid mutating the shared instance
+	opts := &Options{
+		ExcludedExtensions:   DefaultOptions.ExcludedExtensions,
+		ExcludedPaths:        DefaultOptions.ExcludedPaths,
+		ExcludedPathesRegexs: DefaultOptions.ExcludedPathesRegexs,
+		DecompressFn:         DefaultOptions.DecompressFn,
+	}
 	handler := &gzipHandler{
-		Options: DefaultOptions,
+		Options: opts,
 		gzPool: sync.Pool{
 			New: func() interface{} {
-				gz, err := gzip.NewWriterLevel(ioutil.Discard, level)
+				gz, err := gzip.NewWriterLevel(io.Discard, level)
 				if err != nil {
 					panic(err)
 				}
@@ -41,13 +45,13 @@ func (g *gzipHandler) Handle(c *gin.Context) {
 		fn(c)
 	}
 
-	if !g.shouldCompress(c.Request) {
+	if !g.Options.shouldCompress(c.Request, "gzip") {
 		return
 	}
 
 	gz := g.gzPool.Get().(*gzip.Writer)
 	defer g.gzPool.Put(gz)
-	defer gz.Reset(ioutil.Discard)
+	defer gz.Reset(io.Discard)
 	gz.Reset(c.Writer)
 
 	c.Header("Content-Encoding", "gzip")
@@ -60,24 +64,3 @@ func (g *gzipHandler) Handle(c *gin.Context) {
 	c.Next()
 }
 
-func (g *gzipHandler) shouldCompress(req *http.Request) bool {
-	if !strings.Contains(req.Header.Get("Accept-Encoding"), "gzip") ||
-		strings.Contains(req.Header.Get("Connection"), "Upgrade") ||
-		strings.Contains(req.Header.Get("Accept"), "text/event-stream") {
-		return false
-	}
-
-	extension := filepath.Ext(req.URL.Path)
-	if g.ExcludedExtensions.Contains(extension) {
-		return false
-	}
-
-	if g.ExcludedPaths.Contains(req.URL.Path) {
-		return false
-	}
-	if g.ExcludedPathesRegexs.Contains(req.URL.Path) {
-		return false
-	}
-
-	return true
-}

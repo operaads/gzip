@@ -13,6 +13,14 @@ const (
 	NoCompression      = gzip.NoCompression
 )
 
+// Gzip returns a middleware that compresses HTTP responses using gzip encoding
+// for clients that support it via the Accept-Encoding header.
+//
+// The level parameter controls the compression level (use constants like
+// DefaultCompression, BestSpeed, BestCompression, or NoCompression).
+//
+// Use WithDecompressFn(DefaultDecompressHandle) to also decompress gzip-encoded
+// request bodies.
 func Gzip(level int, options ...Option) gin.HandlerFunc {
 	return newGzipHandler(level, options...).Handle
 }

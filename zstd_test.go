@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"github.com/klauspost/compress/gzip"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
@@ -13,49 +12,35 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/klauspost/compress/zstd"
+
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 )
 
 const (
-	testResponse        = "Gzip Test Response "
-	testReverseResponse = "Gzip Test Reverse Response "
+	testZstdResponse        = "Zstd Test Response "
+	testZstdReverseResponse = "Zstd Test Reverse Response "
 )
 
-type rServer struct{}
+type zstdRServer struct{}
 
-func (s *rServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
-	fmt.Fprint(rw, testReverseResponse)
+func (s *zstdRServer) ServeHTTP(rw http.ResponseWriter, req *http.Request) {
+	fmt.Fprint(rw, testZstdReverseResponse)
 }
 
-type closeNotifyingRecorder struct {
-	*httptest.ResponseRecorder
-	closed chan bool
-}
-
-func newCloseNotifyingRecorder() *closeNotifyingRecorder {
-	return &closeNotifyingRecorder{
-		httptest.NewRecorder(),
-		make(chan bool, 1),
-	}
-}
-
-func (c *closeNotifyingRecorder) CloseNotify() <-chan bool {
-	return c.closed
-}
-
-func newServer(t *testing.T) *gin.Engine {
+func newZstdServer(t *testing.T) *gin.Engine {
 	// init reverse proxy server
-	rServer := httptest.NewServer(new(rServer))
+	rServer := httptest.NewServer(new(zstdRServer))
 	t.Cleanup(rServer.Close)
 	target, _ := url.Parse(rServer.URL)
 	rp := httputil.NewSingleHostReverseProxy(target)
 
 	router := gin.New()
-	router.Use(Gzip(DefaultCompression))
+	router.Use(Zstd(ZstdSpeedDefault))
 	router.GET("/", func(c *gin.Context) {
-		c.Header("Content-Length", strconv.Itoa(len(testResponse)))
-		c.String(200, testResponse)
+		c.Header("Content-Length", strconv.Itoa(len(testZstdResponse)))
+		c.String(200, testZstdResponse)
 	})
 	router.Any("/reverse", func(c *gin.Context) {
 		rp.ServeHTTP(c.Writer, c.Request)
@@ -63,35 +48,35 @@ func newServer(t *testing.T) *gin.Engine {
 	return router
 }
 
-func TestGzip(t *testing.T) {
+func TestZstd(t *testing.T) {
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "/", nil)
-	req.Header.Add("Accept-Encoding", "gzip")
+	req.Header.Add("Accept-Encoding", "zstd")
 
 	w := httptest.NewRecorder()
-	r := newServer(t)
+	r := newZstdServer(t)
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, w.Code, 200)
-	assert.Equal(t, w.Header().Get("Content-Encoding"), "gzip")
-	assert.Equal(t, w.Header().Get("Vary"), "Accept-Encoding")
-	assert.NotEqual(t, w.Header().Get("Content-Length"), "0")
-	assert.NotEqual(t, w.Body.Len(), 19)
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "zstd", w.Header().Get("Content-Encoding"))
+	assert.Equal(t, "Accept-Encoding", w.Header().Get("Vary"))
+	assert.NotEqual(t, "0", w.Header().Get("Content-Length"))
+	assert.NotEqual(t, len(testZstdResponse), w.Body.Len())
 	assert.Equal(t, fmt.Sprint(w.Body.Len()), w.Header().Get("Content-Length"))
 
-	gr, err := gzip.NewReader(w.Body)
+	dec, err := zstd.NewReader(w.Body)
 	assert.NoError(t, err)
-	defer gr.Close()
+	defer dec.Close()
 
-	body, _ := ioutil.ReadAll(gr)
-	assert.Equal(t, string(body), testResponse)
+	body, _ := io.ReadAll(dec)
+	assert.Equal(t, testZstdResponse, string(body))
 }
 
-func TestGzipPNG(t *testing.T) {
+func TestZstdPNG(t *testing.T) {
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "/image.png", nil)
-	req.Header.Add("Accept-Encoding", "gzip")
+	req.Header.Add("Accept-Encoding", "zstd")
 
 	router := gin.New()
-	router.Use(Gzip(DefaultCompression))
+	router.Use(Zstd(ZstdSpeedDefault))
 	router.GET("/image.png", func(c *gin.Context) {
 		c.String(200, "this is a PNG!")
 	})
@@ -99,18 +84,18 @@ func TestGzipPNG(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
-	assert.Equal(t, w.Code, 200)
-	assert.Equal(t, w.Header().Get("Content-Encoding"), "")
-	assert.Equal(t, w.Header().Get("Vary"), "")
-	assert.Equal(t, w.Body.String(), "this is a PNG!")
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "", w.Header().Get("Content-Encoding"))
+	assert.Equal(t, "", w.Header().Get("Vary"))
+	assert.Equal(t, "this is a PNG!", w.Body.String())
 }
 
-func TestExcludedExtensions(t *testing.T) {
+func TestExcludedExtensionsZstd(t *testing.T) {
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "/index.html", nil)
-	req.Header.Add("Accept-Encoding", "gzip")
+	req.Header.Add("Accept-Encoding", "zstd")
 
 	router := gin.New()
-	router.Use(Gzip(DefaultCompression, WithExcludedExtensions([]string{".html"})))
+	router.Use(Zstd(ZstdSpeedDefault, WithExcludedExtensions([]string{".html"})))
 	router.GET("/index.html", func(c *gin.Context) {
 		c.String(200, "this is a HTML!")
 	})
@@ -125,12 +110,12 @@ func TestExcludedExtensions(t *testing.T) {
 	assert.Equal(t, "", w.Header().Get("Content-Length"))
 }
 
-func TestExcludedPaths(t *testing.T) {
+func TestExcludedPathsZstd(t *testing.T) {
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "/api/books", nil)
-	req.Header.Add("Accept-Encoding", "gzip")
+	req.Header.Add("Accept-Encoding", "zstd")
 
 	router := gin.New()
-	router.Use(Gzip(DefaultCompression, WithExcludedPaths([]string{"/api/"})))
+	router.Use(Zstd(ZstdSpeedDefault, WithExcludedPaths([]string{"/api/"})))
 	router.GET("/api/books", func(c *gin.Context) {
 		c.String(200, "this is books!")
 	})
@@ -145,56 +130,56 @@ func TestExcludedPaths(t *testing.T) {
 	assert.Equal(t, "", w.Header().Get("Content-Length"))
 }
 
-func TestNoGzip(t *testing.T) {
+func TestNoZstd(t *testing.T) {
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "/", nil)
 
 	w := httptest.NewRecorder()
-	r := newServer(t)
+	r := newZstdServer(t)
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, w.Code, 200)
-	assert.Equal(t, w.Header().Get("Content-Encoding"), "")
-	assert.Equal(t, w.Header().Get("Content-Length"), "19")
-	assert.Equal(t, w.Body.String(), testResponse)
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "", w.Header().Get("Content-Encoding"))
+	assert.Equal(t, strconv.Itoa(len(testZstdResponse)), w.Header().Get("Content-Length"))
+	assert.Equal(t, testZstdResponse, w.Body.String())
 }
 
-func TestGzipWithReverseProxy(t *testing.T) {
+func TestZstdWithReverseProxy(t *testing.T) {
 	req, _ := http.NewRequestWithContext(context.Background(), "GET", "/reverse", nil)
-	req.Header.Add("Accept-Encoding", "gzip")
+	req.Header.Add("Accept-Encoding", "zstd")
 
 	w := newCloseNotifyingRecorder()
-	r := newServer(t)
+	r := newZstdServer(t)
 	r.ServeHTTP(w, req)
 
-	assert.Equal(t, w.Code, 200)
-	assert.Equal(t, w.Header().Get("Content-Encoding"), "gzip")
-	assert.Equal(t, w.Header().Get("Vary"), "Accept-Encoding")
-	assert.NotEqual(t, w.Header().Get("Content-Length"), "0")
-	assert.NotEqual(t, w.Body.Len(), 19)
+	assert.Equal(t, 200, w.Code)
+	assert.Equal(t, "zstd", w.Header().Get("Content-Encoding"))
+	assert.Equal(t, "Accept-Encoding", w.Header().Get("Vary"))
+	assert.NotEqual(t, "0", w.Header().Get("Content-Length"))
+	assert.NotEqual(t, len(testZstdReverseResponse), w.Body.Len())
 	assert.Equal(t, fmt.Sprint(w.Body.Len()), w.Header().Get("Content-Length"))
 
-	gr, err := gzip.NewReader(w.Body)
+	dec, err := zstd.NewReader(w.Body)
 	assert.NoError(t, err)
-	defer gr.Close()
+	defer dec.Close()
 
-	body, _ := ioutil.ReadAll(gr)
-	assert.Equal(t, string(body), testReverseResponse)
+	body, _ := io.ReadAll(dec)
+	assert.Equal(t, testZstdReverseResponse, string(body))
 }
 
-func TestDecompressGzip(t *testing.T) {
+func TestDecompressZstd(t *testing.T) {
 	buf := &bytes.Buffer{}
-	gz, _ := gzip.NewWriterLevel(buf, gzip.DefaultCompression)
-	if _, err := gz.Write([]byte(testResponse)); err != nil {
-		gz.Close()
+	enc, _ := zstd.NewWriter(buf, zstd.WithEncoderLevel(zstd.SpeedDefault))
+	if _, err := enc.Write([]byte(testZstdResponse)); err != nil {
+		enc.Close()
 		t.Fatal(err)
 	}
-	gz.Close()
+	enc.Close()
 
 	req, _ := http.NewRequestWithContext(context.Background(), "POST", "/", buf)
-	req.Header.Add("Content-Encoding", "gzip")
+	req.Header.Add("Content-Encoding", "zstd")
 
 	router := gin.New()
-	router.Use(Gzip(DefaultCompression, WithDecompressFn(DefaultDecompressHandle)))
+	router.Use(Zstd(ZstdSpeedDefault, WithDecompressFn(DefaultZstdDecompressHandle)))
 	router.POST("/", func(c *gin.Context) {
 		if v := c.Request.Header.Get("Content-Encoding"); v != "" {
 			t.Errorf("unexpected `Content-Encoding`: %s header", v)
@@ -215,16 +200,16 @@ func TestDecompressGzip(t *testing.T) {
 	assert.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, "", w.Header().Get("Content-Encoding"))
 	assert.Equal(t, "", w.Header().Get("Vary"))
-	assert.Equal(t, testResponse, w.Body.String())
+	assert.Equal(t, testZstdResponse, w.Body.String())
 	assert.Equal(t, "", w.Header().Get("Content-Length"))
 }
 
-func TestDecompressGzipWithEmptyBody(t *testing.T) {
+func TestDecompressZstdWithEmptyBody(t *testing.T) {
 	req, _ := http.NewRequestWithContext(context.Background(), "POST", "/", nil)
-	req.Header.Add("Content-Encoding", "gzip")
+	req.Header.Add("Content-Encoding", "zstd")
 
 	router := gin.New()
-	router.Use(Gzip(DefaultCompression, WithDecompressFn(DefaultDecompressHandle)))
+	router.Use(Zstd(ZstdSpeedDefault, WithDecompressFn(DefaultZstdDecompressHandle)))
 	router.POST("/", func(c *gin.Context) {
 		c.String(200, "ok")
 	})
@@ -239,13 +224,21 @@ func TestDecompressGzipWithEmptyBody(t *testing.T) {
 	assert.Equal(t, "", w.Header().Get("Content-Length"))
 }
 
-func TestDecompressGzipWithIncorrectData(t *testing.T) {
-	req, _ := http.NewRequestWithContext(context.Background(), "POST", "/", bytes.NewReader([]byte(testResponse)))
-	req.Header.Add("Content-Encoding", "gzip")
+// TestDecompressZstdWithIncorrectData tests that invalid zstd data causes an error
+// when the handler reads the body (streaming decompression behavior).
+func TestDecompressZstdWithIncorrectData(t *testing.T) {
+	req, _ := http.NewRequestWithContext(context.Background(), "POST", "/", bytes.NewReader([]byte(testZstdResponse)))
+	req.Header.Add("Content-Encoding", "zstd")
 
 	router := gin.New()
-	router.Use(Gzip(DefaultCompression, WithDecompressFn(DefaultDecompressHandle)))
+	router.Use(Zstd(ZstdSpeedDefault, WithDecompressFn(DefaultZstdDecompressHandle)))
 	router.POST("/", func(c *gin.Context) {
+		// With streaming decompression, the error occurs when reading the body
+		_, err := c.GetRawData()
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		c.String(200, "ok")
 	})
 
@@ -253,4 +246,5 @@ func TestDecompressGzipWithIncorrectData(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
+	assert.Contains(t, w.Body.String(), "error")
 }

@@ -1,12 +1,14 @@
 package gzip
 
 import (
-	"github.com/klauspost/compress/gzip"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/klauspost/compress/gzip"
+	"github.com/klauspost/compress/zstd"
 )
 
 var (
@@ -26,6 +28,30 @@ type Options struct {
 }
 
 type Option func(*Options)
+
+// shouldCompress checks if the request should be compressed with the given encoding.
+// This is shared logic used by both gzip and zstd handlers.
+func (o *Options) shouldCompress(req *http.Request, encoding string) bool {
+	if !strings.Contains(req.Header.Get("Accept-Encoding"), encoding) ||
+		strings.Contains(req.Header.Get("Connection"), "Upgrade") ||
+		strings.Contains(req.Header.Get("Accept"), "text/event-stream") {
+		return false
+	}
+
+	extension := filepath.Ext(req.URL.Path)
+	if o.ExcludedExtensions.Contains(extension) {
+		return false
+	}
+
+	if o.ExcludedPaths.Contains(req.URL.Path) {
+		return false
+	}
+	if o.ExcludedPathesRegexs.Contains(req.URL.Path) {
+		return false
+	}
+
+	return true
+}
 
 func WithExcludedExtensions(args []string) Option {
 	return func(o *Options) {
@@ -101,6 +127,12 @@ func (e ExcludedPathesRegexs) Contains(requestURI string) bool {
 	return false
 }
 
+// DefaultDecompressHandle decompresses gzip-encoded request bodies.
+// Use this with WithDecompressFn when using the Gzip middleware to handle
+// compressed request bodies from clients.
+//
+// If decompression fails (e.g., invalid gzip data), the request is aborted
+// with HTTP 400 Bad Request.
 func DefaultDecompressHandle(c *gin.Context) {
 	if c.Request.Body == nil {
 		return
@@ -113,4 +145,25 @@ func DefaultDecompressHandle(c *gin.Context) {
 	c.Request.Header.Del("Content-Encoding")
 	c.Request.Header.Del("Content-Length")
 	c.Request.Body = r
+}
+
+// DefaultZstdDecompressHandle decompresses zstd-encoded request bodies.
+// Use this with WithDecompressFn when using the Zstd middleware to handle
+// compressed request bodies from clients.
+//
+// Note: Unlike gzip, zstd uses streaming decompression. The zstd.NewReader
+// doesn't validate data on creation, so invalid data errors will occur when
+// the handler reads the body. Handlers should handle read errors appropriately.
+func DefaultZstdDecompressHandle(c *gin.Context) {
+	if c.Request.Body == nil {
+		return
+	}
+	r, err := zstd.NewReader(c.Request.Body)
+	if err != nil {
+		_ = c.AbortWithError(http.StatusBadRequest, err)
+		return
+	}
+	c.Request.Header.Del("Content-Encoding")
+	c.Request.Header.Del("Content-Length")
+	c.Request.Body = &zstdReadCloser{Decoder: r, underlying: c.Request.Body}
 }
