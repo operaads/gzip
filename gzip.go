@@ -43,5 +43,14 @@ func (g *gzipWriter) Write(data []byte) (int, error) {
 // Fix: https://github.com/mholt/caddy/issues/38
 func (g *gzipWriter) WriteHeader(code int) {
 	g.Header().Del("Content-Length")
+	// A status that cannot carry a body must not advertise an encoding either.
+	// This has to happen here rather than in the middleware's deferred cleanup:
+	// gin's AbortWithStatus and Render flush the headers for a no-body status
+	// straight away, so by the time the cleanup runs they are already on the wire.
+	if bodyAllowedForStatus(code) {
+		g.Header().Set("Content-Encoding", "gzip")
+	} else {
+		g.Header().Del("Content-Encoding")
+	}
 	g.ResponseWriter.WriteHeader(code)
 }

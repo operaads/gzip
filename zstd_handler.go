@@ -1,7 +1,6 @@
 package gzip
 
 import (
-	"fmt"
 	"io"
 	"sync"
 
@@ -57,10 +56,7 @@ func (z *zstdHandler) Handle(c *gin.Context) {
 	c.Header("Content-Encoding", "zstd")
 	c.Header("Vary", "Accept-Encoding")
 	c.Writer = &zstdWriter{c.Writer, enc}
-	defer func() {
-		enc.Close()
-		c.Header("Content-Length", fmt.Sprint(c.Writer.Size()))
-	}()
+	defer finishEncoding(c, enc.Close)
 	c.Next()
 }
 

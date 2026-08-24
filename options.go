@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -51,6 +52,46 @@ func (o *Options) shouldCompress(req *http.Request, encoding string) bool {
 	}
 
 	return true
+}
+
+// bodyAllowedForStatus reports whether a response body is allowed for the
+// given status code, mirroring net/http.bodyAllowedForStatus.
+func bodyAllowedForStatus(status int) bool {
+	switch {
+	case status >= 100 && status <= 199:
+		return false
+	case status == http.StatusNoContent:
+		return false
+	case status == http.StatusNotModified:
+		return false
+	}
+	return true
+}
+
+// finishEncoding closes out the response once the handler chain has run.
+//
+// For statuses that cannot carry a body (1xx/204/304) the encoded stream is
+// dropped rather than closed: closing flushes an empty compressed stream (20
+// bytes for gzip) into the response, which is then reported as Content-Length.
+// RFC 7230 forbids a Content-Length on those statuses and strict clients reject
+// the response outright -- okhttp fails the exchange with
+// "java.net.ProtocolException: HTTP 204 had non-zero Content-Length". The
+// encoder itself is discarded by the caller's deferred Reset, which runs after
+// this.
+//
+// Content-Encoding is dropped in gzipWriter/zstdWriter.WriteHeader rather than
+// here: gin's AbortWithStatus and Render flush the headers for a no-body status
+// before this cleanup runs, so a change made here would never reach the wire.
+//
+// Vary is deliberately left in place. RFC 7232 section 4.1 requires it on a 304,
+// and deleting it would also discard values contributed by other middleware
+// (CORS adds "Vary: Origin", and a preflight is typically a 204).
+func finishEncoding(c *gin.Context, closeEncoder func() error) {
+	if !bodyAllowedForStatus(c.Writer.Status()) {
+		return
+	}
+	_ = closeEncoder()
+	c.Header("Content-Length", strconv.Itoa(c.Writer.Size()))
 }
 
 func WithExcludedExtensions(args []string) Option {

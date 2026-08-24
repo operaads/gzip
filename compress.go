@@ -1,7 +1,6 @@
 package gzip
 
 import (
-	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
@@ -102,10 +101,7 @@ func (h *compressHandler) handleZstd(c *gin.Context) {
 	c.Header("Content-Encoding", "zstd")
 	c.Header("Vary", "Accept-Encoding")
 	c.Writer = &zstdWriter{c.Writer, enc}
-	defer func() {
-		enc.Close()
-		c.Header("Content-Length", fmt.Sprint(c.Writer.Size()))
-	}()
+	defer finishEncoding(c, enc.Close)
 	c.Next()
 }
 
@@ -118,10 +114,7 @@ func (h *compressHandler) handleGzip(c *gin.Context) {
 	c.Header("Content-Encoding", "gzip")
 	c.Header("Vary", "Accept-Encoding")
 	c.Writer = &gzipWriter{c.Writer, gz}
-	defer func() {
-		gz.Close()
-		c.Header("Content-Length", fmt.Sprint(c.Writer.Size()))
-	}()
+	defer finishEncoding(c, gz.Close)
 	c.Next()
 }
 

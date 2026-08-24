@@ -42,7 +42,13 @@ func (z *zstdWriter) Write(data []byte) (int, error) {
 	return z.writer.Write(data)
 }
 
+// See gzipWriter.WriteHeader for why Content-Encoding is adjusted here.
 func (z *zstdWriter) WriteHeader(code int) {
 	z.Header().Del("Content-Length")
+	if bodyAllowedForStatus(code) {
+		z.Header().Set("Content-Encoding", "zstd")
+	} else {
+		z.Header().Del("Content-Encoding")
+	}
 	z.ResponseWriter.WriteHeader(code)
 }
