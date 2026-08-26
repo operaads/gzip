@@ -18,9 +18,10 @@ func newZstdDecoder(r io.Reader) (*zstd.Decoder, error) {
 		r,
 		zstd.WithDecoderConcurrency(1),
 		zstd.WithDecoderLowmem(true),
-		zstd.WithDecoderMaxWindow(128<<10),
+		zstd.WithDecoderMaxWindow(ZstdWindowSize),
 	)
 }
+
 func newZstdHandler(level zstd.EncoderLevel, options ...Option) *zstdHandler {
 	// Create a copy of DefaultOptions to avoid mutating the shared instance
 	opts := &Options{

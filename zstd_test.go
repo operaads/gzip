@@ -211,7 +211,7 @@ func TestDecompressZstdRejectsLargeWindow(t *testing.T) {
 		&compressed,
 		zstd.WithEncoderLevel(zstd.SpeedFastest),
 		zstd.WithEncoderConcurrency(1),
-		zstd.WithWindowSize(256<<10),
+		zstd.WithWindowSize(ZstdWindowSize*2),
 	)
 	assert.NoError(t, err)
 	_, err = enc.Write(payload)
@@ -234,6 +234,7 @@ func TestDecompressZstdRejectsLargeWindow(t *testing.T) {
 
 	assert.Equal(t, http.StatusBadRequest, w.Code)
 }
+
 func TestDecompressZstdWithEmptyBody(t *testing.T) {
 	req, _ := http.NewRequestWithContext(context.Background(), "POST", "/", nil)
 	req.Header.Add("Content-Encoding", "zstd")

@@ -15,6 +15,11 @@ const (
 	ZstdSpeedBestCompression   = zstd.SpeedBestCompression   // Best compression, slowest
 )
 
+// ZstdWindowSize is the zstd window size used by this package's encoder and
+// the maximum window size accepted when decompressing request bodies.
+// Streams encoded with a larger window are rejected during read.
+const ZstdWindowSize = 128 << 10
+
 // Zstd returns a middleware that compresses HTTP responses using zstd encoding
 // for clients that support it via the Accept-Encoding header.
 //
@@ -32,7 +37,7 @@ func newZstdEncoder(level zstd.EncoderLevel) *zstd.Encoder {
 		nil,
 		zstd.WithEncoderLevel(level),
 		zstd.WithEncoderConcurrency(1),
-		zstd.WithWindowSize(128<<10),
+		zstd.WithWindowSize(ZstdWindowSize),
 		zstd.WithLowerEncoderMem(true),
 	)
 	if err != nil {
