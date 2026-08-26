@@ -56,11 +56,7 @@ func newCompressHandler(gzipLevel int, zstdLevel zstd.EncoderLevel, options ...O
 		},
 		zstdPool: sync.Pool{
 			New: func() interface{} {
-				enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(zstdLevel))
-				if err != nil {
-					panic(err)
-				}
-				return enc
+				return newZstdEncoder(zstdLevel)
 			},
 		},
 	}
@@ -161,7 +157,7 @@ func DefaultCompressDecompressHandle(c *gin.Context) {
 
 	switch contentEncoding {
 	case "zstd":
-		r, err := zstd.NewReader(c.Request.Body)
+		r, err := newZstdDecoder(c.Request.Body)
 		if err != nil {
 			_ = c.AbortWithError(http.StatusBadRequest, err)
 			return

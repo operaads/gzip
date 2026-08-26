@@ -13,6 +13,14 @@ type zstdHandler struct {
 	zstdPool sync.Pool
 }
 
+func newZstdDecoder(r io.Reader) (*zstd.Decoder, error) {
+	return zstd.NewReader(
+		r,
+		zstd.WithDecoderConcurrency(1),
+		zstd.WithDecoderLowmem(true),
+		zstd.WithDecoderMaxWindow(128<<10),
+	)
+}
 func newZstdHandler(level zstd.EncoderLevel, options ...Option) *zstdHandler {
 	// Create a copy of DefaultOptions to avoid mutating the shared instance
 	opts := &Options{
@@ -25,11 +33,7 @@ func newZstdHandler(level zstd.EncoderLevel, options ...Option) *zstdHandler {
 		Options: opts,
 		zstdPool: sync.Pool{
 			New: func() interface{} {
-				enc, err := zstd.NewWriter(nil, zstd.WithEncoderLevel(level))
-				if err != nil {
-					panic(err)
-				}
-				return enc
+				return newZstdEncoder(level)
 			},
 		},
 	}

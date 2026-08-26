@@ -27,6 +27,20 @@ func Zstd(level zstd.EncoderLevel, options ...Option) gin.HandlerFunc {
 	return newZstdHandler(level, options...).Handle
 }
 
+func newZstdEncoder(level zstd.EncoderLevel) *zstd.Encoder {
+	enc, err := zstd.NewWriter(
+		nil,
+		zstd.WithEncoderLevel(level),
+		zstd.WithEncoderConcurrency(1),
+		zstd.WithWindowSize(128<<10),
+		zstd.WithLowerEncoderMem(true),
+	)
+	if err != nil {
+		panic(err)
+	}
+	return enc
+}
+
 type zstdWriter struct {
 	gin.ResponseWriter
 	writer *zstd.Encoder

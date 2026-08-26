@@ -9,7 +9,6 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/klauspost/compress/gzip"
-	"github.com/klauspost/compress/zstd"
 )
 
 var (
@@ -199,7 +198,7 @@ func DefaultZstdDecompressHandle(c *gin.Context) {
 	if c.Request.Body == nil {
 		return
 	}
-	r, err := zstd.NewReader(c.Request.Body)
+	r, err := newZstdDecoder(c.Request.Body)
 	if err != nil {
 		_ = c.AbortWithError(http.StatusBadRequest, err)
 		return
